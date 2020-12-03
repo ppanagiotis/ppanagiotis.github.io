@@ -1,19 +1,18 @@
 # Site settings
-title: Jekyll-Uno
-description: 'Jekyll-Uno - a minimal, responsive theme for Jekyll'
-url: 'http://joshgerdes.com/jekyll-uno'
-baseurl: '/jekyll-uno'
+title: 'ppanagiotis@. /~:) _'
+description: 'Welcome to my site'
+url: 'ppanagiotis.github.io'
+baseurl: '/'
 # google_analytics: 'UA-XXXXXX-X'
 # disqus_shortname: 'your-disqus-name'
 # disable_landing_page: true
 
 author:
-  name: 'Josh Gerdes'
-  email: josh@joshgerdes.com
-  twitter_username: joshgerdes
-  facebook_username: joshgerdes
-  github_username:  joshgerdes
-  linkedin_username:  joshgerdes
+  name: 'Panagiotis Panagiotopoulos'
+  email: ppanagiwtis@gmail.com
+  twitter_username: ppanagiwtis
+  github_username:  ppanagiotis
+  linkedin_username:  ppanagiotis
 
 defaults:
   -
