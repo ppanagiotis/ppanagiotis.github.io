@@ -1,0 +1,111 @@
+---
+title:  "From VMs to k8s (part I)"
+date:   2020-12-02 23:34:23
+categories: [home]
+tags: [k8s@home, k8s, kubernetes, ganeti]
+---
+
+## Intro
+The last 7 years for all the services running and supporting my house I used VMs. All VMs where managed using [Ganeti][ganeti], [QEMU][qemu] and [KVM][kvm] hypervisor, hosted at an HP mini server gen8 (Excellent choise for a home server!). Although I was very satisfied with my setup I decide for training purposes to tranfer "everything" at k8s using containers.
+
+## Step One (VM services)
+Write down all running services. During those 7 years a lot of services where running at Ganeti VMs. So I start writing down what I have to transfer.
+
+ | [DHCP][DHCP] | [DNS][DNS] | [Transmision][Transmision] |
+ | [Mysql][Mysql] | [AppDaemon][AppDaemon] | [CouchPotato][CouchPotato] |
+ | [Sickrage][Sickrage] | [Prometheus][Prometheus] | [Grafana][Grafana] |
+ | [Asterisk][Asterisk] | [Hass][Hass] | [OwnCloud][OwnCloud] |
+ | [Mosquitto][Mosquitto] |
+
+## Step Two (Virtualinception)
+Instead of destroying all the VMs and install k8s at a single node (Using for example minikube) I decide to use 6 existing VMs and set up k8s from scratch in multiple nodes. I followed this great tutorial [kubernetes the hard way][kubernetes the hard way] but instead of download all executables, I dist-upgraded all VMs to Debian/Sid and use `kubernetes-node` and `kubernetes-master` packages. To be able to start the services I created systemd unit files and shiped them to the VMs using my [puppet server][puppet server].
+After bootstrapping everything my Ganeti cluster had the following VMs:
+
+```bash
+root@morpheus /~:) gnt-instance list
+Instance             Hypervisor OS     Primary_node      Status  Memory
+controller1.asilo.gr kvm        debian morpheus.asilo.gr running   752M
+controller2.asilo.gr kvm        debian morpheus.asilo.gr running   752M
+kubenode1.asilo.gr   kvm        debian morpheus.asilo.gr running   2.5G
+kubenode2.asilo.gr   kvm        debian morpheus.asilo.gr running   2.5G
+kubenode3.asilo.gr   kvm        debian morpheus.asilo.gr running   2.5G
+kubenode4.asilo.gr   kvm        debian morpheus.asilo.gr running   2.5G
+```
+
+And my k8s cluster:
+```bash
+ppanagiotis@. /~:) kc get nodes
+NAME                 STATUS   ROLES    AGE   VERSION
+kubenode1.asilo.gr   Ready    <none>   14d   v1.19.4
+kubenode2.asilo.gr   Ready    <none>   14d   v1.19.4
+kubenode3.asilo.gr   Ready    <none>   12d   v1.19.4
+kubenode4.asilo.gr   Ready    <none>   12d   v1.19.4
+```
+
+For the communication between kubenodes and kubemasters I setted up a tcp backend at my [haproxy][haproxy] running at HP mini server.
+
+```
+frontend asilo-k8s
+  bind 172.16.1.1:6443
+  mode tcp
+  default_backend asilo-k8s
+
+backend asilo-k8s
+  balance roundrobin
+  mode tcp
+  option tcplog
+  option tcp-check
+  server controller1 172.16.1.8:6443 check
+  server controller2 172.16.1.10:6443 check
+```
+
+## Step Three (Core Services)
+For Kubernetes DNS-Based Service Discovery I choose to go with [CoreDNS][CoreDNS]
+
+To be able to have persistent volumes I checked this [plugin][topolvm] but I found it overkill for a home k8s cluster. So I decided to use [nfs client provisioner][nfs client provisioner]
+I had already nfs running at my HP mini server, so the setup was quite easy. Also I had a huge VG running over raid1, make it perfect for that use case. (Using LVMs and thin snapshots would be great for versioning control of my persistent volumes)
+
+For exporting k8s services at my local network subnet i came across [metallb][metallb] project.
+I installed it using a config map where I setted up the appropriate address pool for my services.
+
+After all Core Services installed I had the following running pods:
+
+```bash
+ppanagiotis@. /~:) kc get pods -n kube-system
+NAME                                                 READY   STATUS    RESTARTS   AGE
+coredns-7df964bc46-wmnlf                             1/1     Running   1          35h
+controller-76ff896bcf-pnzpf                          1/1     Running   6          10d
+speaker-45zkg                                        1/1     Running   7          15d
+speaker-lt2ht                                        1/1     Running   5          14d
+speaker-tr4z8                                        1/1     Running   8          11d
+speaker-q2oOw                                        1/1     Running   4          11d
+nfs-client-provisioner-5c4df46f44-6kzk9              1/1     Running   6          10d
+nfs-client-provisioner-5c4df46f44-8cg46              1/1     Running   2          11d
+nfs-client-provisioner-5c4df46f44-kcqmd              1/1     Running   9          10d
+nfs-client-provisioner-5c4df46f44-52q84              1/1     Running   7          10d
+```
+
+
+[ganeti]: http://www.ganeti.org/
+[kvm]: https://en.wikipedia.org/wiki/Kernel-based_Virtual_Machine
+[qemu]: https://en.wikipedia.org/wiki/QEMU
+[DHCP]: https://en.wikipedia.org/wiki/DHCPD
+[DNS]: https://en.wikipedia.org/wiki/Unbound_(DNS_server)
+[Transmision]: https://transmissionbt.com/download/
+[Mysql]: https://mariadb.org/
+[AppDaemon]: https://appdaemon.readthedocs.io/en/latest/
+[CouchPotato]: https://couchpota.to/
+[Sickrage]: https://git.sickrage.ca/SiCKRAGE/sickrage
+[Prometheus]: https://prometheus.io/
+[Grafana]: https://grafana.com/
+[Asterisk]: https://www.asterisk.org/
+[Hass]: https://home-assistant.io/
+[OwnCloud]: https://owncloud.com/
+[Mosquitto]: https://mosquitto.org/
+[kubernetes the hard way]: https://github.com/kelseyhightower/kubernetes-the-hard-way/
+[puppet server]: https://github.com/ppanagiotis/puppet/
+[CoreDNS]: https://coredns.io/plugins/kubernetes/
+[topolvm]: https://github.com/topolvm/topolvm/
+[nfs client provisioner]: https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/
+[metallb]: https://metallb.universe.tf/
+[haproxy]: http://www.haproxy.org/
